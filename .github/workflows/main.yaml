@@ -26,12 +26,8 @@ jobs:
       - id: 'get-credentials'
         uses: 'google-github-actions/get-gke-credentials@v2'
         with:
-          cluster_name: 'temp-blog-post-cluster'
-          location: 'us-central1-c'
-
-      # The KUBECONFIG env var is automatically exported and picked up by kubectl.
-      - id: 'get-pods'
-        run: 'kubectl get pods'
+          cluster_name: ${{ secrets.GKE_CLUSTER_NAME }}
+          location: ${{ secrets.GKE_ZONE }}
 
       - name: Install vCluster CLI
         run: |
@@ -41,7 +37,7 @@ jobs:
 
       - name: Set env
         run: |
-          echo "PR_NUMBER=1234" >> $GITHUB_ENV
+          echo "PR_NUMBER=${{ github.event.number }}" >> $GITHUB_ENV
 
       - name: Create vCluster
         run: |
