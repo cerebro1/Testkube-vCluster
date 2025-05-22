@@ -2,10 +2,17 @@ name: Testkube on vCluster
 on:
   pull_request:
     branches:
-      - main 
+      - main
+  push:
+    branches:
+      - ci
 
 jobs:
   run-test:
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -16,69 +23,79 @@ jobs:
         with:
           credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
 
-      - name: Manually install auth plugin
-        run: |
-          sudo apt-get update
-          sudo apt-get install apt-transport-https ca-certificates gnupg curl
-          curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
-          echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
-          sudo apt-get update && sudo apt-get install google-cloud-sdk-gke-gcloud-auth-plugin
- 
-      - name: Set up GKE credentials and install auth plugin
-        run: |
-          gcloud container clusters get-credentials ${{ secrets.GKE_CLUSTER_NAME }} \
-            --zone ${{ secrets.GKE_ZONE }} \
-            --project ${{ secrets.GCP_PROJECT_ID }}
-
-      - name: Install vCluster CLI
-        run: |
-          curl -sSL https://github.com/loft-sh/vcluster/releases/latest/download/vcluster-linux-amd64 -o vcluster
-          chmod +x vcluster
-          sudo mv vcluster /usr/local/bin
-
-      - name: Create vCluster
-        run: |
-          PR_NUMBER=${{ github.event.number }}
-          echo "Running for PR #$PR_NUMBER"
-          vcluster create testkube-vcluster-$PR_NUMBER --namespace demo-$PR_NUMBER --connect=false
-          echo "Waiting for vCluster to be ready..."
-          sleep 100
-
-      - name: Connect to vCluster
-        run: |
-          PR_NUMBER=${{ github.event.number }}
-          vcluster connect testkube-vcluster-$PR_NUMBER --namespace demo-$PR_NUMBER
-          kubectl config current-context  # verify vcluster context is active
-          echo "Show pods on vCluster"
-          kubectl get pods -n demo-$PR_NUMBER
-
-      - name: Deploy Sample Application
-        run: |
-          kubectl apply -f nginx-deployment.yaml
-          kubectl get all
-
-      - name: Setup Testkube
-        uses: kubeshop/setup-testkube@v1
+      - id: 'get-credentials'
+        uses: 'google-github-actions/get-gke-credentials@v2'
         with:
-          organization: ${{ secrets.TESTKUBE_ORG_ID }}
-          environment: ${{ secrets.TESTKUBE_ENV_ID }}
-          token: ${{ secrets.TESTKUBE_API_TOKEN }}
+          cluster_name: 'temp-blog-post-cluster'
+          location: 'us-central1-c'
 
-      - name: Provision ephemeral runner
-        run: |
-          testkube install runner github-action-runner-${{ github.run_id }} --create --env sonali-srivastava-personal-env --namespace testkube --floating
+      # The KUBECONFIG env var is automatically exported and picked up by kubectl.
+      - id: 'get-pods'
+        run: 'kubectl get pods'
 
-      - name: Run Test
-        run: |
-           testkube run testworkflow curl-nginx-app \
-           -f \
-           --config url=http://nginx-service.default.svc.cluster.local \
-           --target name=github-action-runner-${{ github.run_id }} \
-           --tag pull-request=PR-${{ github.run_id }}
-
-      - name: Disconnect vCluster and delete resources
-        run: |
-          PR_NUMBER=${{ github.event.number }}
-          testkube delete runner github-action-runner-${{ github.run_id }} --delete --uninstall
-          vcluster disconnect
-          kubectl delete ns demo-$PR_NUMBER
+#      - name: Manually install auth plugin
+#        run: |
+#          sudo apt-get update
+#          sudo apt-get install apt-transport-https ca-certificates gnupg curl
+#          curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+#          echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+#          sudo apt-get update && sudo apt-get install google-cloud-sdk-gke-gcloud-auth-plugin
+#
+#      - name: Set up GKE credentials and install auth plugin
+#        run: |
+#          gcloud container clusters get-credentials ${{ secrets.GKE_CLUSTER_NAME }} \
+#            --zone ${{ secrets.GKE_ZONE }} \
+#            --project ${{ secrets.GCP_PROJECT_ID }}
+#
+#      - name: Install vCluster CLI
+#        run: |
+#          curl -sSL https://github.com/loft-sh/vcluster/releases/latest/download/vcluster-linux-amd64 -o vcluster
+#          chmod +x vcluster
+#          sudo mv vcluster /usr/local/bin
+#
+#      - name: Create vCluster
+#        run: |
+#          PR_NUMBER=${{ github.event.number }}
+#          echo "Running for PR #$PR_NUMBER"
+#          vcluster create testkube-vcluster-$PR_NUMBER --namespace demo-$PR_NUMBER --connect=false
+#          echo "Waiting for vCluster to be ready..."
+#          sleep 100
+#
+#      - name: Connect to vCluster
+#        run: |
+#          PR_NUMBER=${{ github.event.number }}
+#          vcluster connect testkube-vcluster-$PR_NUMBER --namespace demo-$PR_NUMBER
+#          kubectl config current-context  # verify vcluster context is active
+#          echo "Show pods on vCluster"
+#          kubectl get pods -n demo-$PR_NUMBER
+#
+#      - name: Deploy Sample Application
+#        run: |
+#          kubectl apply -f nginx-deployment.yaml
+#          kubectl get all
+#
+#      - name: Setup Testkube
+#        uses: kubeshop/setup-testkube@v1
+#        with:
+#          organization: ${{ secrets.TESTKUBE_ORG_ID }}
+#          environment: ${{ secrets.TESTKUBE_ENV_ID }}
+#          token: ${{ secrets.TESTKUBE_API_TOKEN }}
+#
+#      - name: Provision ephemeral runner
+#        run: |
+#          testkube install runner github-action-runner-${{ github.run_id }} --create --env sonali-srivastava-personal-env --namespace testkube --floating
+#
+#      - name: Run Test
+#        run: |
+#           testkube run testworkflow curl-nginx-app \
+#           -f \
+#           --config url=http://nginx-service.default.svc.cluster.local \
+#           --target name=github-action-runner-${{ github.run_id }} \
+#           --tag pull-request=PR-${{ github.run_id }}
+#
+#      - name: Disconnect vCluster and delete resources
+#        run: |
+#          PR_NUMBER=${{ github.event.number }}
+#          testkube delete runner github-action-runner-${{ github.run_id }} --delete --uninstall
+#          vcluster disconnect
+#          kubectl delete ns demo-$PR_NUMBER
