@@ -39,9 +39,12 @@ jobs:
           chmod +x vcluster
           sudo mv vcluster /usr/local/bin
 
+      - name: Set env
+        run: |
+          echo "PR_NUMBER=1234" >> $GITHUB_ENV
+
       - name: Create vCluster
         run: |
-          echo PR_NUMBER=1234 >> $GITHUB_ENV
           echo "Running for PR ${{ env.PR_NUMBER }}"
           vcluster create testkube-vcluster-${{ env.PR_NUMBER }} --namespace demo-${{ env.PR_NUMBER }} --connect=false
           echo "Waiting for vCluster to be ready..."
